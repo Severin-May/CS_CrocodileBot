@@ -3,11 +3,13 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
+import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class Bot extends TelegramLongPollingBot {
@@ -28,66 +30,111 @@ public class Bot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-
-        var next = InlineKeyboardButton.builder()
-                .text("Next").callbackData("next")
-                .build();
-
-        var see = InlineKeyboardButton.builder()
-                .text("See").callbackData("see")
-                .build();
-
-        keyboardM1 = InlineKeyboardMarkup.builder()
-                .keyboardRow(List.of(next)).build();
-        keyboardM1 = InlineKeyboardMarkup.builder()
-                .keyboardRow(List.of(see)).build();
-
-        var msg = update.getMessage();
-        var user = msg.getFrom();
-        var id = user.getId();
-        var txt = msg.getText();
-
-        if(msg.isCommand()){
-            if(msg.getText().equals("/see"))
-                guessed = false;
-            else if (msg.getText().equals("/next"))
-                guessed = true;
-            else if (txt.equals("/menu"))
-                sendMenu(id, "<b>Menu 1</b>", keyboardM1);
-
+        if (update.hasMessage() && update.getMessage().hasText()) {
+            handleCommands(update);
+        } else if (update.hasCallbackQuery()) {
+            handleCallbackQuery(update);
         }
-//
-//        if(guessed)
-//            sendText(id, "Yeayy, you guessed the word!");
-//        else
-//            sendText(id, "Try more, bro");
     }
 
     public void sendText(Long who, String what){
         SendMessage sm = SendMessage.builder()
                                     .chatId(who.toString())
                                     .text(what).build();
-        SendPhoto sendPhotoRequest = new SendPhoto();
-        sendPhotoRequest.setChatId(String.valueOf(who.toString()));
-        sendPhotoRequest.setPhoto(new InputFile("https://www.google.com/imgres?q=cat&imgurl=https%3A%2F%2Fcdn.britannica.com%2F70%2F234870-050-D4D024BB%2FOrange-colored-cat-yawns-displaying-teeth.jpg&imgrefurl=https%3A%2F%2Fwww.britannica.com%2Fanimal%2Fcat&docid=Bvzzy2OOLWm60M&tbnid=zWdzdPdo-A-wdM&vet=12ahUKEwint7yBx8qGAxVZ_7sIHdOBBS4QM3oECBUQAA..i&w=1600&h=1146&hcb=2&itg=1&ved=2ahUKEwint7yBx8qGAxVZ_7sIHdOBBS4QM3oECBUQAA"));
-        sendPhotoRequest.setCaption("hehe");
         try {
             execute(sm);
-//            execute(sendPhotoRequest);
         } catch (TelegramApiException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public void sendMenu(Long who, String txt, InlineKeyboardMarkup kb){
-        SendMessage sm = SendMessage.builder().chatId(who.toString())
-                                    .parseMode("HTML").text(txt)
-                                    .replyMarkup(kb).build();
+    private void sendMenu(Long chatId) {
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId.toString());
+        message.setText("Choose an option:");
+
+        InlineKeyboardMarkup markupInline = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rowsInline = new ArrayList<>();
+
+        rowsInline.add(createButtonRow("see", Commands.SEE.getCommand()));
+        rowsInline.add(createButtonRow("next", Commands.NEXT.getCommand()));
+
+        markupInline.setKeyboard(rowsInline);
+        message.setReplyMarkup(markupInline);
 
         try {
-            execute(sm);
+            execute(message);
         } catch (TelegramApiException e) {
-            throw new RuntimeException(e);
+            e.printStackTrace();
+        }
+    }
+
+    private List<InlineKeyboardButton> createButtonRow(String buttonText, String callbackData) {
+        List<InlineKeyboardButton> rowInline = new ArrayList<>();
+        InlineKeyboardButton button = new InlineKeyboardButton();
+        button.setText(buttonText);
+        button.setCallbackData(callbackData);
+        rowInline.add(button);
+        return rowInline;
+    }
+
+
+    /* individual command handlers */
+    private void nextWord(Long id) {
+        sendText(id, "Next word");
+    }
+
+    private void seeWord(Long id) {
+        sendText(id, "See word");
+    }
+
+    private void start(Long id, Message msg) {
+        if(msg.hasText())
+            sendText(id, "Welcome to CS Crocodile Game");
+    }
+
+    private void help(Long id, Message msg) {
+        if(msg.hasText())
+            sendText(id, "We have the following commands to navigate in the game");
+    }
+
+
+    /* callback and command handlers */
+    public void handleCommands(Update update) {
+        var msg = update.getMessage();
+        var user = msg.getFrom();
+        var id = user.getId();
+
+        if(msg.isCommand()){
+            Commands command = Commands.fromString(msg.getText());
+            switch(command) {
+                case START: start(id, msg); break;
+                case HELP: help(id, msg); break;
+                case SEE: seeWord(id); break;
+                case NEXT: nextWord(id); break;
+                case MENU: sendMenu(id); break;
+                default: sendText(id, "Sorry, no such command exists"); break;
+            }
+        }
+    }
+
+
+    private void handleCallbackQuery(Update update) {
+        var callbackQuery = update.getCallbackQuery();
+        var callbackData = callbackQuery.getData();
+        var userId = callbackQuery.getFrom().getId();
+
+        Commands command = Commands.fromString(callbackData);
+        if (command != null) {
+            switch (command) {
+                case SEE: seeWord(userId); break;
+                case NEXT: nextWord(userId); break;
+                default:
+                    sendText(userId, "Unknown callback data");
+                    break;
+            }
+        } else {
+            sendText(userId, "Invalid callback data");
         }
     }
 }
